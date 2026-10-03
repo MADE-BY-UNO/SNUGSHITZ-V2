@@ -43,7 +43,7 @@ end
 
 local function Round(obj,radius)
 	local c=Instance.new("UICorner")
-	c.CornerRadius=UDim.new(0,radius or 8) -- fixed syntax error from original
+	c.CornerRadius=UDim.new(0,radius or 😎 -- fixed syntax error from original
 	c.Parent=obj
 	return c
 end
@@ -257,9 +257,93 @@ Toggle(ESPPage,"Highlight ESP",Config.ShowHighlight,function(v) Config.ShowHighl
 Toggle(ESPPage,"Team Check",Config.TeamCheck,function(v) Config.TeamCheck=v end)
 Toggle(ESPPage,"Wall Check",Config.WallCheck,function(v) Config.WallCheck=v end)
 
+-- Team identity / teammate detection
+local markerNames={"StageTeamSide","Team","TeamName","TeamColor","TeamId","TeamID","team"}
+
+local function ReadTeamMarker(inst)
+	if not inst then return nil end
+	for _,name in ipairs(markerNames) do
+		local attr=inst:GetAttribute(name)
+		if attr~=nil then
+			return name.."="..tostring(attr)
+		end
+		local child=inst:FindFirstChild(name)
+		if child and child:IsA("ValueBase") then
+			return name.."="..tostring(child.Value)
+		end
+	end
+	return nil
+end
+
+local function GetTeamIdentity(player)
+	if not player then return nil end
+
+	local marker=ReadTeamMarker(player) or ReadTeamMarker(player.Character)
+	if marker then return marker end
+
+	local stats=player:FindFirstChild("leaderstats")
+	marker=ReadTeamMarker(stats)
+	if marker then return marker end
+
+	if not player.Neutral then
+		return "TeamColor="..tostring(player.TeamColor)
+	end
+
+	return nil
+end
+
+local cachedCustomTeamCount=0
+local cachedCustomTeamAt=0
+
+local function GetDistinctCustomTeamCount()
+	local now=os.clock()
+	if now-cachedCustomTeamAt>0.5 then
+		local seen={}
+		local count=0
+		for _,player in ipairs(Players:GetPlayers()) do
+			local identity=GetTeamIdentity(player)
+			if identity and not seen[identity] then
+				seen[identity]=true
+				count+=1
+			end
+		end
+		cachedCustomTeamCount=count
+		cachedCustomTeamAt=now
+	end
+	return cachedCustomTeamCount
+end
+
+local function GetTeamKey(player)
+	if player and player.Team then
+		return "team:"..player.Team.Name
+	end
+	return GetTeamIdentity(player)
+end
+
+local function IsTeammate(player)
+	if not player or player==LocalPlayer then return false end
+
+	-- Prefer Roblox's native Team system when both players have a Team.
+	if LocalPlayer.Team and player.Team then
+		return LocalPlayer.Team==player.Team
+	end
+
+	-- Fall back to the custom team markers used by the experience.
+	local localTeam=GetTeamIdentity(LocalPlayer)
+	local targetTeam=GetTeamIdentity(player)
+	if not localTeam or not targetTeam then return false end
+
+	-- Only trust custom markers when at least two distinct team identities exist.
+	if GetDistinctCustomTeamCount()>=2 then
+		return localTeam==targetTeam
+	end
+
+	return false
+end
+
 local function IsEnemy(player)
 	if player==LocalPlayer then return false end
-	if Config.TeamCheck and LocalPlayer.Team and player.Team and LocalPlayer.Team==player.Team then return false end
+	if Config.TeamCheck and IsTeammate(player) then return false end
 	return true
 end
 
